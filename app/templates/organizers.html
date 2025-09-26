@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🎪 {{ organizer.name }} Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: #f9f9f9; color: #333; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 25px; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h1 { color: #e91e63; }
+        .revenue { text-align: center; font-size: 24px; font-weight: bold; color: #1976d2; margin: 20px 0; }
+        .section { background: white; margin: 20px 0; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #fafafa; }
+        .scanned { color: #2e7d32; }
+        .invite-box { background: #e3f2fd; padding: 15px; border-radius: 8px; margin-top: 15px; }
+        .invite-box code { display: block; margin: 8px 0; padding: 8px; background: white; border-radius: 4px; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎪 {{ organizer.name }}</h1>
+            <p>Organizer Code: <strong>{{ org_code }}</strong></p>
+        </header>
+
+        <div class="revenue">
+            Total Revenue: ₦{{ "{:,}".format(total_revenue) }}
+        </div>
+
+        <div class="section">
+            <h2>🎟️ Tickets Sold ({{ tickets|length }})</h2>
+            {% if tickets %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Buyer</th>
+                        <th>Ticket</th>
+                        <th>Event</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in tickets %}
+                    <tr>
+                        <td>{{ t.ticket_code }}</td>
+                        <td>{{ t.buyer_name }}</td>
+                        <td>{{ t.ticket_type }} (₦{{ "{:,}".format(t.price) }})</td>
+                        <td>{{ t.event_name }}</td>
+                        <td class="{% if t.status == 'Scanned' %}scanned{% endif %}">{{ t.status }}</td>
+                        <td>{{ t.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No tickets sold yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="section">
+            <h2>📅 Events</h2>
+            <ul>
+                {% for ev in events %}
+                <li><strong>{{ ev.name }}</strong> — {{ ev.date }} @ {{ ev.location }} ({{ ev.status }})</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>📤 Invite Attendees</h2>
+            <p>Share this link or QR code so people can join your events:</p>
+            <div class="invite-box">
+                <code>https://wa.me/14155238886?text=attend%20{{ org_code }}</code>
+                <img src="/generate_qr/{{ org_code }}" alt="Invite QR" width="180" />
+            </div>
+        </div>
+    </div>
+</body>
+</html>

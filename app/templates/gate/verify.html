@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>🎟️ Verify Ticket</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; background: #f5f5f5; }
+        .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 500px; margin: 0 auto; }
+        .valid { color: #28a745; font-size: 24px; }
+        .invalid { color: #dc3545; font-size: 24px; }
+        .btn { 
+            background: #28a745; color: white; border: none; padding: 15px 30px; 
+            font-size: 18px; border-radius: 8px; cursor: pointer; margin: 15px 0; 
+            width: 90%; max-width: 300px;
+        }
+        .btn:disabled { background: #ccc; }
+        .scanned { background: #ffc107; }
+        input { padding: 12px; width: 80%; max-width: 300px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; }
+        .header { margin-bottom: 20px; }
+        .qr { margin: 20px auto; max-width: 200px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h2>🎟️ TICKET VERIFICATION</h2>
+        </div>
+
+        {% if ticket.status == 'scanned' %}
+            <h3 class="invalid">❌ ALREADY SCANNED</h3>
+            <p><strong>Scanned at:</strong> {{ ticket.scanned_at }}</p>
+            <p><strong>By:</strong> {{ ticket.scanned_by }}</p>
+        {% else %}
+            <h3 class="valid">✅ VALID TICKET</h3>
+            <p><strong>Event:</strong> {{ ticket.event.name }}</p>
+            <p><strong>Date:</strong> {{ ticket.event.date }}</p>
+            <p><strong>Location:</strong> {{ ticket.event.location }}</p>
+            <p><strong>Ticket Type:</strong> {{ ticket.ticket_type.name }}</p>
+            <p><strong>Holder:</strong> {{ ticket.buyer.name or "Unknown" }}</p>
+            <p><strong>Code:</strong> {{ ticket.ticket_code }}</p>
+
+            <form method="POST" action="/scan/{{ ticket.ticket_code }}" style="margin-top: 20px;">
+                <input type="text" name="staff_name" placeholder="Enter Your Name (e.g., Gate 3 - Ada)" required>
+                <button type="submit" class="btn">CONFIRM ENTRY</button>
+            </form>
+        {% endif %}
+    </div>
+</body>
+</html>

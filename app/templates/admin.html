@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🎟️ Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+        h1 {
+            font-size: 28px;
+            color: #1976d2;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-card h3 {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        .stat-card p {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1976d2;
+        }
+        .section {
+            background: white;
+            margin-bottom: 25px;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            margin-bottom: 16px;
+            color: #333;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #eee;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #444;
+        }
+        tr:hover {
+            background-color: #fafafa;
+        }
+        .failed {
+            color: #d32f2f;
+        }
+        .success {
+            color: #2e7d32;
+        }
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-issued {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        .status-scanned {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #888;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎟️ System Admin Dashboard</h1>
+            <p>Real-time overview of users, events, payments, and tickets</p>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="stats">
+            <div class="stat-card">
+                <h3>Users</h3>
+                <p>{{ stats.users }}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Organizers</h3>
+                <p>{{ stats.organizers }}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Events</h3>
+                <p>{{ stats.events }}</p>
+            </div>
+            <div class="stat-card">
+                <h3>Tickets Issued</h3>
+                <p>{{ stats.tickets_issued }}</p>
+            </div>
+        </div>
+
+        <!-- Failed Payments -->
+        <div class="section">
+            <h2>🚨 Failed Payments (Last 20)</h2>
+            {% if failed_payments %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Event</th>
+                        <th>Organizer</th>
+                        <th>Amount</th>
+                        <th>Gateway</th>
+                        <th>Ref</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in failed_payments %}
+                    <tr class="failed">
+                        <td>{{ tx.user_name }} ({{ tx.user_phone_clean }})</td>
+                        <td>{{ tx.event_name }}</td>
+                        <td>{{ tx.organizer_name }}</td>
+                        <td>₦{{ "{:,}".format(tx.amount) }}</td>
+                        <td>{{ tx.payment_gateway }}</td>
+                        <td>{{ tx.payment_ref }}</td>
+                        <td>{{ tx.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No failed payments found.</p>
+            {% endif %}
+        </div>
+
+        <!-- Recent Tickets -->
+        <div class="section">
+            <h2>✅ Recent Tickets</h2>
+            {% if recent_tickets %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>User</th>
+                        <th>Event</th>
+                        <th>Status</th>
+                        <th>Issued</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for t in recent_tickets %}
+                    <tr>
+                        <td><strong>{{ t.ticket_code }}</strong></td>
+                        <td>{{ t.user_name }}</td>
+                        <td>{{ t.event_name }}</td>
+                        <td>
+                            <span class="status-badge status-{{ 'scanned' if t.status == 'Scanned' else 'issued' }}">
+                                {{ t.status }}
+                            </span>
+                        </td>
+                        <td>{{ t.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No tickets issued yet.</p>
+            {% endif %}
+        </div>
+
+        <footer>
+            <p>Admin Dashboard • Live View</p>
+        </footer>
+    </div>
+</body>
+</html>
