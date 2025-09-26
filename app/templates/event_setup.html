@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete Event Setup - {{ organizer.name }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { background: #28a745; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🎉 Complete Your Event Setup</h1>
+    <p>Event: <strong>{{ event.name }}</strong></p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="description">Event Description</label>
+            <textarea name="description" id="description" rows="4">{{ event.description or '' }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="sales_close_date">Ticket Sales Close Date</label>
+            <input type="datetime-local" name="sales_close_date" id="sales_close_date"
+                   value="{% if event.sales_close_date %}{{ event.sales_close_date[:16] }}{% endif %}">
+        </div>
+
+        <div class="form-group">
+            <label for="event_poster">Event Poster (Optional)</label>
+            <input type="file" name="event_poster" id="event_poster" accept="image/*">
+        </div>
+
+        <button type="submit">✅ Publish Event & Open Ticket Sales</button>
+    </form>
+
+    <p><a href="{{ url_for('organizer_dashboard', org_code=org_code) }}">← Back to Dashboard</a></p>
+</body>
+</html>

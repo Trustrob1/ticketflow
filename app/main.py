@@ -156,15 +156,13 @@ def normalize_phone(twilio_phone):
 def get_user_organizers(sender):
     """Get all organizers the user is linked to, with active event count"""
     print(f">>> 🔍 Fetching organizers for raw WhatsApp ID: {sender}")
-    result = supabase.table('user_organizers') \
-        .select('organizer_id, organizers(name, refundable, contact_for_refunds)') \
+    result = supabase_service.table('user_organizers') \
+        .select('organizer_id, organizers(name, code, refundable, contact_for_refunds)') \
         .eq('whatsapp_id', sender) \
         .execute()
     print(f">>> 📋 user_organizers result: {result.data}")
-
     if not result.data:
         return []
-    
     orgs = []
     for row in result.data:
         # Count active events for this organizer
@@ -178,6 +176,7 @@ def get_user_organizers(sender):
         orgs.append({
             'id': row['organizer_id'],
             'name': row['organizers']['name'],
+            'code': row['organizers']['code'],          # ✅ Now available
             'refundable': row['organizers']['refundable'],
             'contact_for_refunds': row['organizers']['contact_for_refunds'],
             'active_events_count': events_count.count
@@ -194,6 +193,43 @@ def get_active_events_for_organizer(org_id):
         .gte('date', 'now()') \
         .execute()
     return events.data or []
+
+def get_incomplete_organizer_event(sender: str):
+    """
+    Returns dict with event_name and dashboard_url if user created an event
+    that has ticket_sales_open=False and no tickets.
+    Returns None if complete or not an organizer.
+    """
+    orgs = get_user_organizers(sender)
+    if not orgs:
+        return None
+
+    # Only consider organizers created by this user
+    user_orgs = [
+        org for org in orgs
+        if org.get('contact_for_refunds') == sender
+    ]
+    if not user_orgs:
+        return None
+
+    for org in user_orgs:
+        events = supabase.table('events') \
+            .select('id, name, ticket_sales_open') \
+            .eq('organizer_id', org['id']) \
+            .eq('status', 'active') \
+            .execute()
+        for ev in events.data or []:
+            if not ev.get('ticket_sales_open'):
+                ticket_count = supabase.table('ticket_types') \
+                    .select('id', count='exact') \
+                    .eq('event_id', ev['id']) \
+                    .execute().count
+                if ticket_count == 0:
+                    return {
+                        'event_name': ev['name'],
+                        'dashboard_url': f"https://yourdomain.com/organizer/{org['code']}"
+                    }
+    return None
 
 def generate_organizer_code(event_name: str, event_date: str) -> str:
     """
@@ -308,7 +344,11 @@ def handle_attend_command(raw_phone, org_code, msg):
 
     # Link to organizer using RAW phone (because user_organizers.whatsapp_id = raw)
     supabase.table('user_organizers').upsert(
-        {'whatsapp_id': raw_phone, 'organizer_id': org.data['id']},
+        {
+            'whatsapp_id': raw_phone,
+            'organizer_id': organizer_id,
+            'organizer_name': data['org_name']  # ✅ ADD THIS
+        },
         on_conflict='whatsapp_id,organizer_id'
     ).execute()
 
@@ -316,6 +356,11 @@ def handle_attend_command(raw_phone, org_code, msg):
     msg.body(f"🎉 *{org.data['name']}*\n{welcome}\nType 'events' to see available tickets.")
     if org.data.get('logo_url'):
         msg.media(org.data['logo_url'])
+
+    print(f"\n>>> 📤 BOT REPLY TO {raw_phone}:")
+    print("──────────────────────────────────────")
+    print(reply_text)
+    print("──────────────────────────────────────\n")
 
 def send_ticket(whatsapp_id):
     tx = supabase.table('transactions') \
@@ -410,6 +455,62 @@ def clear_health_cache():
     is_paystack_healthy.cache_clear()
 
 
+@app.route('/organizer/<org_code>/setup', methods=['GET', 'POST'])
+def organizer_setup(org_code):
+    # 🔹 Remove accidental spaces
+    org_code = org_code.strip()
+    org = get_organizer_by_code(org_code)
+    if not org:
+        return "❌ Invalid organizer code", 404
+
+    # Fetch the event created during WhatsApp onboarding
+    event = supabase.table('events') \
+        .select('*') \
+        .eq('organizer_id', org['id']) \
+        .eq('status', 'active') \
+        .execute()
+
+    if not event.data:
+        return "❌ No event found. Complete WhatsApp onboarding first.", 404
+
+    event_data = event.data[0]
+
+    if request.method == 'POST':
+        # Update event with new data
+        update_data = {
+            'description': request.form.get('description'),
+            'sales_close_date': request.form.get('sales_close_date'),
+            'ticket_sales_open': True  # Enable sales after setup
+        }
+        supabase.table('events').update(update_data).eq('id', event_data['id']).execute()
+
+        # Handle poster upload (if provided)
+        if 'event_poster' in request.files:
+            file = request.files['event_poster']
+            if file and file.filename:
+                try:
+                    filename = f"{org_code}.jpg"
+                    supabase_service.storage.from_("event-posters").upload(
+                        filename,
+                        file.read(),
+                        file_options={"content-type": file.content_type}
+                    )
+                    poster_url = supabase_service.storage.from_("event-posters").get_public_url(filename)
+                    supabase.table('events').update({'event_image_url': poster_url}).eq('id', event_data['id']).execute()
+                except Exception as e:
+                    print(f"⚠️ Poster upload failed: {e}")
+                    # Don't fail the whole setup — just skip the image
+
+        return redirect(url_for('organizer_dashboard', org_code=org_code))
+
+    # GET: Render setup form
+    return render_template('event_setup.html',
+        organizer=org,
+        event=event_data,
+        org_code=org_code
+    )
+
+
 @app.route("/webhook", methods=['POST'])
 def whatsapp_webhook():
     try: 
@@ -431,6 +532,69 @@ def whatsapp_webhook():
         user_orgs = get_user_organizers(raw_phone)
         print(f">>> 👤 User: {user.get('name', 'Unknown')} | Orgs count: {len(user_orgs)}")
         print(f">>> 🏢 Organizers: {[org['name'] for org in user_orgs]}")
+
+        # ================================
+        # CHECK FOR INCOMPLETE SETUP (once per session)
+        # ================================
+        incomplete_event = get_incomplete_organizer_event(raw_phone)
+        if incomplete_event:
+            # Check active session
+            session = supabase.table('user_sessions').select('*').eq('whatsapp_id', raw_phone).execute()
+            session_data = {}
+            session_id = None
+
+            if session.data:
+                sess = session.data[0]
+                session_data = sess.get('data') or {}
+                session_id = sess['id']
+                if not session_data.get('incomplete_setup_reminder_shown'):
+                    session_data['incomplete_setup_reminder_shown'] = True
+                    supabase.table('user_sessions').update({
+                        'data': session_data
+                    }).eq('id', session_id).execute()
+                else:
+                    incomplete_event = None  # skip reminder
+            else:
+                # Create session and mark reminder shown
+                supabase.table('user_sessions').upsert({
+                    'whatsapp_id': raw_phone,
+                    'step': 'active',
+                    'data': {'incomplete_setup_reminder_shown': True},
+                    'expires_at': (datetime.now(pytz.utc) + timedelta(minutes=30)).isoformat()
+                }).execute()
+
+        # ================================
+        # HIGH-PRIORITY COMMANDS (bypass reminder)
+        # ================================
+        if incoming_msg.lower().startswith("attend "):
+            org_code = incoming_msg.split(" ", 1)[1].strip().upper()
+            handle_attend_command(whatsapp_id, org_code, msg)
+            return str(resp)
+
+        refund_keywords = ['refund', 'return ticket', 'cancel my ticket', 'get money back', 'reimburse']
+        if any(kw in incoming_msg.lower() for kw in refund_keywords):
+            # ... (existing refund logic)
+            return str(resp)
+
+        if any(kw in incoming_msg.lower() for kw in ['my ticket', 'resend', 'send ticket', 'qr code']):
+            send_ticket(whatsapp_id)
+            return str(resp)
+
+        # ================================
+        # SHOW REMINDER IF NEEDED
+        # ================================
+        if incomplete_event:
+            reminder = (
+                f"👋 Welcome back!\n"
+                f"Your event *{incomplete_event['event_name']}* is ready, but **ticket sales are not open**.\n"
+                f"🛠️ Complete setup: {incomplete_event['dashboard_url']}\n\n"
+                "❓ You can also:\n"
+                "🎟️ *Buy tickets* → Type: `attend ORG-CODE`\n"
+                "🎫 *Manage your tickets* → Type: `my ticket`\n"
+                "ℹ️ *Ask for help* → Type: `events`"
+            )
+            msg.body(reminder)
+            return str(resp)
 
         # ================================
         # REFUND REQUEST DETECTION
@@ -711,7 +875,8 @@ def whatsapp_webhook():
                             'code': code,
                             'welcome_message': data['welcome_message'],
                             'refundable': data['refundable'],
-                            'contact_for_refunds': raw_phone
+                            'contact_for_refunds': raw_phone,      # for refund messages (raw format)
+                            'phone': clean_phone                   # ✅ NEW: clean phone for dashboard, SMS, etc.
                         }).execute()
                         organizer_id = org_res.data[0]['id']
                         supabase_service.table('events').insert({
@@ -723,7 +888,11 @@ def whatsapp_webhook():
                             'ticket_sales_open': False
                         }).execute()
                         supabase.table('user_organizers').upsert(
-                            {'whatsapp_id': raw_phone, 'organizer_id': organizer_id},
+                            {
+                                'whatsapp_id': raw_phone,
+                                'organizer_id': org.data['id'],
+                                'organizer_name': org.data['name']  # ✅ ADD THIS
+                            },
                             on_conflict='whatsapp_id,organizer_id'
                         ).execute()
                         supabase.table('user_sessions').delete().eq('whatsapp_id', raw_phone).execute()
@@ -753,13 +922,13 @@ def whatsapp_webhook():
                             qr_url = None
 
                         # === SEND MESSAGE + QR ===
+                        dashboard_url = f"https://46e92286d210.ngrok-free.app/organizer/{code}/setup"
                         reply_text = (
                             f"🎉 *Your event is ready!* ✅\n"
-                            f"Your organizer code: *{code}*\n\n"
-                            f"📲 *Share this link with attendees:*\n"
-                            f"{invite_link}\n\n"
-                            f"✅ They’ll be able to buy tickets instantly!\n"
-                            f"🛠️ Next: Go to your dashboard to add ticket types and open sales!"
+                            f"Organizer code: *{code}*\n\n"
+                            f"📲 Share invite link:\n{invite_link}\n\n"
+                            f"🛠️ **Complete setup** (add tickets, poster, description):\n{dashboard_url}\n\n"
+                            f"✅ Ticket sales will open once you add ticket types!"
                         )
                         msg.body(reply_text)
                         if qr_url:
@@ -1911,4 +2080,4 @@ def start_reconciliation_scheduler():
 
 if __name__ == "__main__":
     start_reconciliation_scheduler()
-    app.run(debug=False)
+    app.run(debug=True)
